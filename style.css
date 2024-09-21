@@ -1,0 +1,33 @@
+/* Ensure the entire sidebar content is centered */
+.stApp .sidebar .block-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+/* Center the image */
+.stApp .sidebar [data-testid="stImage"] {
+    display: flex;
+    justify-content: center;
+}
+
+/* Ensure that the image itself is centered */
+.stApp .sidebar [data-testid="stImage"] img {
+    display: block;
+    margin: 0 auto;
+}
+
+/* Center the title (YouTube Scribe) */
+.stApp .sidebar h2 {
+    text-align: center;
+    margin: 0 auto;
+    width: 100%;
+}
+
+/* Center the select box */
+.stApp .sidebar .stSelectbox {
+    width: 80%;
+    margin: 10px auto;
+}
