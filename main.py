@@ -2,14 +2,17 @@ import streamlit as st
 from openai import OpenAI
 import re
 from youtube_transcript_api import YouTubeTranscriptApi
-import toml
 import os
 
-# Load configuration from TOML file
-config = toml.load("config.toml")
+# Get OpenAI API key from environment variable
+api_key = os.getenv("OPENAI_API_KEY")
+
+# Check if the key exists (optional but useful)
+if not api_key:
+    raise ValueError("No OpenAI API Key found! Please set OPENAI_API_KEY as an environment variable.")
 
 # Set up OpenAI client
-client = OpenAI(api_key=config["openai"]["api_key"])
+client = OpenAI(api_key=api_key)
 
 # Custom CSS for centering sidebar content
 def local_css(file_name):

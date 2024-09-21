@@ -8,3 +8,4 @@ config.toml
 # Ignore virtual environments
 venv/
 env/
+.env
