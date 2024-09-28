@@ -1,20 +1,26 @@
 import streamlit as st
 from openai import OpenAI
 import re
-from youtube_transcript_api import YouTubeTranscriptApi
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 import os
 
-# Get OpenAI API key from environment variable
-api_key = os.getenv("OPENAI_API_KEY")
+# Get API keys from environment variables
+openai_api_key = os.getenv("OPENAI_API_KEY")
+youtube_api_key = os.getenv("YOUTUBE_API_KEY")
 
-# Check if the key exists (optional but useful)
-if not api_key:
+# Check if the keys exist
+if not openai_api_key:
     raise ValueError("No OpenAI API Key found! Please set OPENAI_API_KEY as an environment variable.")
+if not youtube_api_key:
+    raise ValueError("No YouTube API Key found! Please set YOUTUBE_API_KEY as an environment variable.")
 
 # Set up OpenAI client
-client = OpenAI(api_key=api_key)
+client = OpenAI(api_key=openai_api_key)
 
-# Custom CSS for centering sidebar content
+# Set up YouTube API client
+youtube = build('youtube', 'v3', developerKey=youtube_api_key)
+
 def local_css(file_name):
     with open(file_name, "r") as f:
         st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
@@ -27,13 +33,28 @@ def get_youtube_video_id(url):
 
 def get_youtube_transcript(video_id):
     try:
-        transcript = YouTubeTranscriptApi.get_transcript(video_id)
+        results = youtube.captions().list(
+            part="snippet",
+            videoId=video_id
+        ).execute()
+
+        caption_id = results['items'][0]['id']
+        transcript = youtube.captions().download(
+            id=caption_id,
+            tfmt='srt'
+        ).execute()
+
+        # Process the SRT format to extract just the text
+        lines = transcript.decode('utf-8').split('\n\n')
         full_transcript = ""
-        for entry in transcript:
-            full_transcript += entry['text'] + " "
+        for line in lines:
+            parts = line.split('\n')
+            if len(parts) >= 3:
+                full_transcript += parts[2] + " "
+
         return full_transcript.strip()
-    except Exception as e:
-        st.error(f"Error fetching transcript: {e}")
+    except HttpError as e:
+        st.error(f"An error occurred: {e}")
         return None
 
 def process_transcript(transcript, model):
@@ -70,35 +91,31 @@ def process_transcript(transcript, model):
     return response
 
 def stream_transcript_generator(response):
-    """Generator to yield chunks of the transcript for streaming."""
     full_response = ""
     
     for chunk in response:
         if chunk.choices[0].delta.content:
             content = chunk.choices[0].delta.content
             full_response += content
-            yield content  # Yield each chunk of content for streaming
+            yield content
 
-    yield full_response  # At the end, yield the full response for final use
+    yield full_response
 
 def main():
-    # Apply custom CSS
     local_css("style.css")
 
-    # Sidebar
     with st.sidebar:
         st.image(os.path.join(os.getcwd(), "assets/youtube.png"), width=175)
         st.markdown('<div class="centered-title">____YouTube Scribe____</div>', unsafe_allow_html=True)
-        st. write("")
-        st. write("")
+        st.write("")
+        st.write("")
         
         model = st.selectbox(
             "--------Select GPT Model--------",
-            ("gpt-4o-mini", "gpt-4o"),
+            ("gpt-4-1106-preview", "gpt-4"),
             index=0
         )
 
-    # Main content
     st.header("YouTube Video Scribe")
     
     url = st.text_input("Enter YouTube URL:")
@@ -114,10 +131,8 @@ def main():
                     with st.spinner("Processing transcript..."):
                         response = process_transcript(transcript, model)
                         
-                        # Stream the response using st.write_stream with a generator
                         final_output = st.write_stream(stream_transcript_generator(response))
                         
-                        # Provide download button once fully streamed
                         st.download_button(
                             label="Download Markdown",
                             data=final_output,
