@@ -1,54 +1,38 @@
 import streamlit as st
 import os
-import pickle
-from google_auth_oauthlib.flow import Flow
-from google.auth.transport.requests import Request
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 import re
 from openai import OpenAI
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
-# If modifying these scopes, delete the file token.pickle.
-SCOPES = ['https://www.googleapis.com/auth/youtube.force-ssl']
-
-# Set up OpenAI client
+# Set up API keys
 openai_api_key = os.getenv("OPENAI_API_KEY")
+youtube_api_key = os.getenv("YOUTUBE_API_KEY")
+
 if not openai_api_key:
     raise ValueError("No OpenAI API Key found! Please set OPENAI_API_KEY as an environment variable.")
+if not youtube_api_key:
+    raise ValueError("No YouTube API Key found! Please set YOUTUBE_API_KEY as an environment variable.")
+
+# Set up OpenAI client
 client = OpenAI(api_key=openai_api_key)
-
-def get_authenticated_service():
-    creds = None
-    # The file token.pickle stores the user's access and refresh tokens
-    if os.path.exists('token.pickle'):
-        with open('token.pickle', 'rb') as token:
-            creds = pickle.load(token)
-    # If there are no (valid) credentials available, let the user log in.
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = Flow.from_client_secrets_file(
-                'client_secret.json', SCOPES)
-            creds = flow.run_local_server(port=0)
-        # Save the credentials for the next run
-        with open('token.pickle', 'wb') as token:
-            pickle.dump(creds, token)
-
-    return build('youtube', 'v3', credentials=creds)
 
 def get_youtube_transcript(video_id):
     try:
-        youtube = get_authenticated_service()
-        results = youtube.captions().list(
+        youtube = build('youtube', 'v3', developerKey=youtube_api_key)
+        
+        # First, get the caption track
+        captions_response = youtube.captions().list(
             part="snippet",
             videoId=video_id
         ).execute()
 
-        if not results['items']:
+        if not captions_response.get('items'):
             return None  # No captions found
 
-        caption_id = results['items'][0]['id']
+        caption_id = captions_response['items'][0]['id']
+
+        # Then, download the caption track
         transcript = youtube.captions().download(
             id=caption_id,
             tfmt='srt'
@@ -147,6 +131,8 @@ def main():
                             file_name="processed_script.md",
                             mime="text/markdown"
                         )
+                else:
+                    st.error("No transcript available for this video. Make sure the video has captions enabled.")
             else:
                 st.error("Invalid YouTube URL provided.")
         else:
