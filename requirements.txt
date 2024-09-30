@@ -1,3 +1,5 @@
 google_api_python_client==2.141.0
 openai==1.50.2
 streamlit==1.27.0
+google-auth-oauthlib
+google-auth-httplib2

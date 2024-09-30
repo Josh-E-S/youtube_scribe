@@ -1,42 +1,52 @@
 import streamlit as st
-from openai import OpenAI
-import re
+import os
+import pickle
+from google_auth_oauthlib.flow import Flow
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-import os
+import re
+from openai import OpenAI
 
-# Get API keys from environment variables
-openai_api_key = os.getenv("OPENAI_API_KEY")
-youtube_api_key = os.getenv("YOUTUBE_API_KEY")
-
-# Check if the keys exist
-if not openai_api_key:
-    raise ValueError("No OpenAI API Key found! Please set OPENAI_API_KEY as an environment variable.")
-if not youtube_api_key:
-    raise ValueError("No YouTube API Key found! Please set YOUTUBE_API_KEY as an environment variable.")
+# If modifying these scopes, delete the file token.pickle.
+SCOPES = ['https://www.googleapis.com/auth/youtube.force-ssl']
 
 # Set up OpenAI client
+openai_api_key = os.getenv("OPENAI_API_KEY")
+if not openai_api_key:
+    raise ValueError("No OpenAI API Key found! Please set OPENAI_API_KEY as an environment variable.")
 client = OpenAI(api_key=openai_api_key)
 
-# Set up YouTube API client
-youtube = build('youtube', 'v3', developerKey=youtube_api_key)
+def get_authenticated_service():
+    creds = None
+    # The file token.pickle stores the user's access and refresh tokens
+    if os.path.exists('token.pickle'):
+        with open('token.pickle', 'rb') as token:
+            creds = pickle.load(token)
+    # If there are no (valid) credentials available, let the user log in.
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = Flow.from_client_secrets_file(
+                'client_secret.json', SCOPES)
+            creds = flow.run_local_server(port=0)
+        # Save the credentials for the next run
+        with open('token.pickle', 'wb') as token:
+            pickle.dump(creds, token)
 
-def local_css(file_name):
-    with open(file_name, "r") as f:
-        st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
-
-def get_youtube_video_id(url):
-    video_id = re.search(r'(?<=v=)[\w-]+', url)
-    if not video_id:
-        video_id = re.search(r'(?<=be/)[\w-]+', url)
-    return video_id.group(0) if video_id else None
+    return build('youtube', 'v3', credentials=creds)
 
 def get_youtube_transcript(video_id):
     try:
+        youtube = get_authenticated_service()
         results = youtube.captions().list(
             part="snippet",
             videoId=video_id
         ).execute()
+
+        if not results['items']:
+            return None  # No captions found
 
         caption_id = results['items'][0]['id']
         transcript = youtube.captions().download(
@@ -56,6 +66,12 @@ def get_youtube_transcript(video_id):
     except HttpError as e:
         st.error(f"An error occurred: {e}")
         return None
+
+def get_youtube_video_id(url):
+    video_id = re.search(r'(?<=v=)[\w-]+', url)
+    if not video_id:
+        video_id = re.search(r'(?<=be/)[\w-]+', url)
+    return video_id.group(0) if video_id else None
 
 def process_transcript(transcript, model):
     prompt = f"""
@@ -102,22 +118,14 @@ def stream_transcript_generator(response):
     yield full_response
 
 def main():
-    local_css("style.css")
-
-    with st.sidebar:
-        st.image(os.path.join(os.getcwd(), "assets/youtube.png"), width=175)
-        st.markdown('<div class="centered-title">____YouTube Scribe____</div>', unsafe_allow_html=True)
-        st.write("")
-        st.write("")
-        
-        model = st.selectbox(
-            "--------Select GPT Model--------",
-            ("gpt-4-1106-preview", "gpt-4"),
-            index=0
-        )
-
-    st.header("YouTube Video Scribe")
+    st.title("YouTube Video Scribe")
     
+    model = st.sidebar.selectbox(
+        "Select GPT Model",
+        ("gpt-3.5-turbo", "gpt-4"),
+        index=0
+    )
+
     url = st.text_input("Enter YouTube URL:")
     
     if st.button("Transcribe", use_container_width=True):
